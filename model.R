@@ -4,7 +4,7 @@ library(randomForest)
 library(ROCR)
 library(doMC)
 
-registerDoMC(cores = 1)
+registerDoMC(cores = 2)
 
 
 ## training
@@ -116,6 +116,8 @@ training[, course_id.1:=NULL]
 str(training)
 
 
+
+
 fit.rf <- randomForest(outcome ~., data = training, ntree = 500)
 predict.rf <- predict(fit.rf, type = "prob")
 
@@ -133,12 +135,29 @@ test.predict.rf <- predict(fit.rf, type = "prob", newdata = testing)
 auc(test.predict.rf, cv.enrol.test$outcome)
 
 
-ctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 5, classProbs = TRUE, allowParallel = TRUE, summaryFunction = twoClassSummary)
+## Cross-validation by Caret
 
-ctrl <- trainControl(method = "cv", number = 10, classProbs = TRUE, summaryFunction = twoClassSummary, verboseIter = TRUE)
+training <- as.data.frame(training)
+
+ctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 5, classProbs = TRUE, allowParallel = TRUE, summaryFunction = twoClassSummary, verboseIter = TRUE)
+
+##ctrl <- trainControl(method = "cv", number = 10, classProbs = TRUE, summaryFunction = twoClassSummary, verboseIter = TRUE)
+##ctrl <- trainControl(method = "none", number = 10, classProbs = TRUE, summaryFunction = twoClassSummary, verboseIter = TRUE)
+
+## random forest
+
+cv.rf.fit <- train(outcome ~.
+                 , data = training
+                 , method = 'rf'
+                 , ntrees = 500
+                 , trControl = ctrl
+                 , metric = 'ROC'
+                 , importance = TRUE)
+
+cv.rf.fit
+
+## grid search for parameters
 grid <- expand.grid(.mtry = c(24))
-
-ctrl <- trainControl(method = "none", number = 10, classProbs = TRUE, summaryFunction = twoClassSummary, verboseIter = TRUE)
 
 cv.rf.fit <- train(outcome ~.
                  , data = training
@@ -149,13 +168,68 @@ cv.rf.fit <- train(outcome ~.
                  , importance = TRUE
                  , tuneGrid = grid)
 
-
 cv.rf.fit
 
 plot(cv.rf.fit)
 
 test.predict.cv.rf <- predict(cv.rf.fit, type = "prob", newdata = testing)
 auc(test.predict.cv.rf, cv.enrol.test$outcome)
+
+
+######### Decision trees
+## C5.0   package: C50
+
+cv.c50.fit <- train(outcome ~.
+                 , data = training
+                 , method = 'C5.0'
+                 , trControl = ctrl
+                 , metric = 'ROC'
+                 , importance = TRUE)
+
+cv.rf.fit
+
+## CART package: rpart
+cv.rpart.fit <- train(outcome ~.
+                 , data = training
+                 , method = 'rpart'
+                 , trControl = ctrl
+                 , metric = 'ROC'
+                 )
+
+cv.rf.fit
+
+## Neural Networks package:
+cv.nnet.fit <- train(outcome ~.
+                 , data = training
+                 , method = 'nnet'
+                 , trControl = ctrl
+                 , metric = 'ROC'
+                 )
+
+
+## SVM
+cv.svm.fit <- train(outcome ~.
+                 , data = training
+                 , method = 'svmLinear'
+                 , trControl = ctrl
+                 , metric = 'ROC'
+                 )
+
+cv.svm.fit
+
+## Naive Bayes
+grid <- expand.grid(.fL = c(1, 2, 3), .usekernel = c(TRUE, FALSE))
+
+cv.nb.fit <- train(outcome ~.
+                 , data = training
+                 , method = 'nb'
+                 , trControl = ctrl
+                 , metric = 'ROC'
+                   , tuneGrid = grid
+                 )
+
+
+cv.nb.fit
 
 ######## submission #######
 
@@ -191,3 +265,19 @@ dim(submission)
 write.table(submission, file = "../data/RFsub.csv", row.names = FALSE, col.names = FALSE, sep = ",")
 
 
+
+
+
+
+
+
+
+## fun
+
+
+p <- 1000 / dim(enrol.train)[1]
+
+inTraining <- createDataPartition(enrol.train$outcome, p = p, list = FALSE)
+training <- enrol.train[inTraining[, 1]]
+
+dim(training)
